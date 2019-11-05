@@ -1,6 +1,4 @@
-# MOJO - 16bit Arithmetic Logic Unit (ALU) implementation with Lucid
-#### Web Virtual Reality (WebVR) Experience built with A-frame
-
+# MOJO - 16bit Arithmetic Logic Unit (ALU) implementation 
 
 ## Getting started
 To install: 
