@@ -39,9 +39,10 @@ git clone https://github.com/daryllman/MOJO-16bitALU.git
 ## Members
 ### Group 2-4
 - Daryll Wong - SUTD Sophomore | Information Systems Technology & Design (ISTD)
-- Akasdasd Teo - SUTD Sophomore | Information Systems Technology & Design (ISTD)
-- Masdasdo - SUTD Sophomore | Information Systems Technology & Design (ISTD)
-- Natasdasd - SUTD Sophomore | Information Systems Technology & Design (ISTD)
+- Sheikh Salim - SUTD Sophomore | Information Systems Technology & Design (ISTD)
+- Evangeline Lim - SUTD Sophomore | Information Systems Technology & Design (ISTD)
+- Gabriel Koh - SUTD Sophomore | Information Systems Technology & Design (ISTD)
+- Iman Heizer Pua - SUTD Sophomore | Information Systems Technology & Design (ISTD)
 
 ## Credits
 * [Lucid](https://alchitry.com/pages/lucid-fpga-tutorials) - Lucid tutorials 
