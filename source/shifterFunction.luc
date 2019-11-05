@@ -22,9 +22,9 @@ module shifterFunction (
         // forces a to be treated as signed 
         res = $signed(a) >>> b[3:0];
       
-      // if nothing selected, just return a back:
+      // BONUS function for SLA!
       default:
-        res = a;
+        res = $signed(a) <<< b[3:0];
             
   }
 }
