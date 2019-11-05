@@ -15,8 +15,8 @@ susssdsd
 * [EasdTC](https:asdm/) - Open-source Web Real-Time Communications (WebRTC) toolkit
 
 ## Stff
-Works on Vive, Oculus Rift, Samsung Gear VR, Google Cardboasdasdasdnal motion sensors) <br/>
-[More info on WebVR & compatibility with VR headset](https://webvr.rocks)
+Works on Vive, Ocuasdasdasdsors) <br/>
+[More info on Weasdasd &asdasdaR sadasdset](https://webvr.rocks)
 
 ## Authors
 - Daryll Wong - SUTD Sophomore | Information Systems Technology & Design (ISTD)
@@ -26,6 +26,6 @@ Works on Vive, Oculus Rift, Samsung Gear VR, Google Cardboasdasdasdnal motion se
 
 ## Credits
 * daddy
-(https://<i></i>github.com/dasdasdframe-sharedspace-component)
+(https://<i></i>github.com/dasdasdasdasdmponent)
 * Nedsadasdasd
 (https://<i></i>github.comasdasdetworked-aframe)
