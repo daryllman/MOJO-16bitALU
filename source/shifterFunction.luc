@@ -1,0 +1,31 @@
+module shifterFunction (
+
+    input a[16],
+    input b[16],
+    input alufnshifter[2],
+    
+    output res[16]
+  ) {
+
+  always {
+    case(alufnshifter){
+      // If SL(shift left) selected
+      b00:
+        res = a << b[3:0];
+        
+      // If SR(shift right) selected
+      b01:
+        res = a >> b[3:0];
+        
+      // If SR(shift right) selected
+      b11:
+        // forces a to be treated as signed 
+        res = $signed(a) >>> b[3:0];
+      
+      // if nothing selected, just return a back:
+      default:
+        res = a;
+            
+  }
+}
+}

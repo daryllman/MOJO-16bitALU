@@ -1,0 +1,33 @@
+module cmpFunction (
+
+    input z,
+    input v,
+    input n,
+    input alufncmper[2],
+    output res[16]
+    
+  ) {
+  sig temp;
+  
+  always {
+    
+    case(alufncmper){
+    // if CMPEQ (01) is selected
+      b01:
+        temp = z;
+      // if CMPLT (10) is selected
+      b10:
+        temp = n^v;
+      // if CMPLE (11) is selected  
+      b11:
+        temp = z|(n^v);
+      // Because MOJO always need default
+      default:
+        temp = 0;
+    
+    }
+    res[0] = temp;
+    res[15:1] = 15b0;
+  
+  }
+}

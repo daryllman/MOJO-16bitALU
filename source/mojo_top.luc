@@ -1,0 +1,1388 @@
+
+module mojo_top (
+    input clk,                // 50MHz clock
+    input rst_n,              // reset button (active low)
+    output led [8],           // 8 user controllable LEDs
+    //input cclk,             // configuration clock, AVR ready when high
+    output spi_miso,          // AVR SPI MISO
+    //input spi_ss,           // AVR SPI Slave Select
+    // input spi_mosi,        // AVR SPI MOSI
+    //input spi_sck,          // AVR SPI Clock
+    output spi_channel [4],  // AVR general purpose pins (used by default to select ADC channel)
+    //input avr_tx,          // AVR TX (FPGA RX)
+    output avr_rx,           // AVR RX (FPGA TX)
+    //input avr_rx_busy,     // AVR RX buffer full
+    output io_led [24],      // LEDs on IO Shield
+    output io_seg [8],       // 7-segment LEDs on IO Shield
+    output io_sel [4],       // Digit select on IO Shield
+    input io_button [5],     // 5 buttons on IO Shield
+    input io_dip [24]        // DIP switches on IO Shield
+    //input button
+    ) {
+  
+  sig rst;                    // reset signal
+  
+  .clk(clk) {
+    // The reset conditioner is used to synchronize the reset signal to the FPGA
+    // clock. This ensures the entire FPGA comes out of reset at the same time.
+    reset_conditioner reset_cond;
+
+    
+    .rst(rst){
+    
+      // DFFs tp store variables
+      dff store_a[16];      
+      dff store_b[16];
+      dff store_alufn[6];
+      dff store_temp[16];
+      //dff store_result[16];
+      dff store_z;
+      dff store_v;
+      dff store_n;
+      dff store_correct[16];
+      dff store_status[8];
+      dff counter[29];      //counter to time the switching of states
+      dff case_state[4](#INIT(0));
+      
+      
+      // To Store all our FSM test cases for AUTO mode
+      fsm state = {INITIAL, MANUAL, TESTADD1, TESTADD2,TESTSUB, TESTMUL, TESTAND, TESTOR, TESTXOR,
+                   TESTA, TESTSHL, TESTSHR, TESTSRA, TESTCMPEQ, TESTCMPLT,
+                    TESTCMPLE, TESTCMPLE2};
+        
+      multi_seven_seg seg;  // instantiate module multi_seven_seg
+    }
+  }
+  
+  sig a[16];
+  sig b[16];
+  sig alufn[6];
+  sig alu[16];
+   
+  alu alumod;               //creating instance of alu
+  const TIMER = 28;         //constant for clock to switch states
+  
+  
+  
+  always {
+    reset_cond.in = ~rst_n; // input raw inverted reset signal
+    rst = reset_cond.out;   // conditioned reset
+    
+    led = 8h00;             // turn LEDs off
+    spi_miso = bz;          // not using SPI
+    spi_channel = bzzzz;    // not using flags
+    avr_rx = bz;            // not using serial port
+    
+    io_led = 24b0;    // turn LEDs off
+    io_seg = 8hff;          // turn segments off
+    io_sel = 4hf;           // select no digits
+    
+    seg.values = {8h11,8h11,8h11,8h11}; //initialising values of seven segment display
+    io_sel = ~8h0;
+    a = 8h0;                //initialising value of a
+    b = 8h0;                //initialising value of b
+    io_seg = ~seg.seg;
+    io_sel = ~seg.sel;
+    
+   
+    alufn = io_dip[21:16]; //assigning dip switches to alufn input
+    alumod.alufn = alufn;   //connecting alufn to input of module alu
+    alumod.a = a;           //connecting a to input of module alu
+    alumod.b = b;           //connecting a to input of module alu
+    alu = alumod.result;       //connecting alu to output of module alu
+    io_led[15:0] = a;
+    
+    
+    //_______________________________________________________________________________________________________________________________________  
+    
+    // INITIAL STAGE - CONTROL STATE TO JUMP TO AUTO OR MANUAL MOD
+    case (state.q){                 //initial start state of finite state machine
+     state.INITIAL:
+      //io_led[23] =b0;
+      seg.values = {8h11,8h11,8h11,8h11}; // empty screen until you enter next stage
+        
+       
+        if(io_button[4] == 1){      //if button is pressed, move to next state
+           state.d = state.TESTADD1;
+        } 
+        
+        
+        if(io_dip[23]){           //if dip switch is down, change from auto testing to manual testing
+            seg.values = {8h11, 8h0, 8h0, 8h0};
+            state.d = state.MANUAL;
+        }
+    
+    
+    
+    //_______________________________________________________________________________________________________________________________________   
+        
+    // MANUAL MODE FOR MANUAL INPUTS
+    state.MANUAL:                   //manual test state
+      io_led[23] = b1; 
+      
+      if(io_button[0]){               //if switch[0][1] is high, switch[1] and switch[2] become inputs for a
+          a[15:0] = io_dip[15:0];
+          store_a.d = a;
+          store_temp.d = a;          
+      } 
+          
+      if(io_button[1]){                        //if switch[0][1] is low, switch[1] and switch[2] become inputs for b
+          b[15:0] = io_dip[15:0];
+            store_b.d = b;
+            store_temp.d = b;
+      }
+
+      if(io_button[2]){
+          alufn = io_dip[21:16];              //if button is pressed, store input alufn into a d flip flip
+          store_alufn.d = alufn;
+            
+          alumod.alufn = store_alufn.q;       //input stored value of alufn into module alu  
+          alumod.a = store_a.q;               //input stored value of a into module alu
+          alumod.b = store_b.q;           //input stored value of b into module alu
+          alumod.alufn = store_alufn.q;       //input stored value of alufn into module alu  
+          alu = alumod.result;
+            
+          store_z.d = alumod.z;
+          store_v.d = alumod.v;
+          store_n.d = alumod.n;
+          
+          store_temp.d = alu[15:0];
+            
+          
+      }
+            
+      if(io_button[3]){             //if button is pressed, reset a,b,alufn
+          store_a.d = 16b0;
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+      }
+          
+        //alumod.a = store_a.q;         //input stored value of a into module alu
+        //alumod.b = store_b.q;         //input stored value of b into module alu
+        //alumod.alufn = store_alufn.q; //input stored value of alufn into module alu
+        //alu = alumod.result;             //assigning alu to output of module alu
+        //io_led[15:0] = alu[15:0];         //display alu output on onboard leds
+        io_led[15:0] = store_temp.q;
+        
+          
+        // ONLY FOR MANUAL MODE: 
+        // Show Z, V, N results on io_seg screen        
+        if(store_z.q == b1){seg.values[2] = h1;} else{ seg.values[2] = h0; } // if Z==1: 2nd io_seg=1
+        if(store_v.q == b1){seg.values[1] = h1;} else{ seg.values[1] = h0; } // if V==1: 3rd io_seg=1
+        if(store_n.q == b1){seg.values[0] = h1;} else{ seg.values[0] = h0; } // if N==1: 4th io_seg=1  
+          
+        
+        
+        // Show ALUFN[5:0] on io_le
+          io_led[21:16] = store_alufn.q;
+          
+        /*io_led[18] = alumod.z;
+        io_led[17] = alumod.v;
+        io_led[16] = alumod.n;*/
+      
+        /*(io_button[4]){             // if RIGHT button pressed: Exit state.manual, return to state.initial
+          state.d = state.INITIAL;}*/
+        
+    
+          if(!io_dip[23]){
+          store_a.d = 16b0;
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          state.d = state.INITIAL;
+          }
+        
+    //_______________________________________________________________________________________________________________________________________   
+        
+    //OPERATION 1 
+    //ADDER-ADDITION (1: without overflow)
+    state.TESTADD1:	         
+      store_alufn.d = 6b000000;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000010;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b0000000000001110;             //pre-determined correct expected result: 14
+          
+      alumod.alufn = store_alufn.q;                      //Storing of the values
+      alumod.a = store_a.q;                             
+      alumod.b = store_b.q;                           
+      alu = alumod.result;			                        
+        
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                 
+
+      
+          
+      if (case_state.q == 0){
+        seg.values = {8h1, 8h11, 8h11, 8h11};                          // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+          
+      if (case_state.q == 1){
+          seg.values = {8h11, 8h11, 8h11, 8hb};                         // io_seg: "   A"
+          store_status.d = 6b0;                                         // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+          
+      if (case_state.q == 2){
+          seg.values = {8h11, 8h11, 8h11, 8h8};                         // io_seg: "   B"
+          store_temp.d = store_b.q;                                     // show value of B in leds
+          }
+          
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+          
+        if (store_correct.q == alu[15:0]){                             // Compare expected correct result & the alu result
+            seg.values = {8ha, 8hb, 8hc, 8hc};                         // "PASS"
+        } else {
+            seg.values = {8hd, 8hb, 8he, 8hf};                         // "FAIL"
+        }
+          }
+          
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTADD2; 
+          }
+      
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state 
+          
+          
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+            
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }            
+     //_____________________________________________________________________________________________________________________________________________
+     
+    //OPERATION 2 
+    //ADDER-ADDITION (2: with overflow)
+    state.TESTADD2:	         
+      store_alufn.d = 6b000000;                          //assigning predetermined value of alufn
+      store_a.d = 16b0111111111111111;                   //assigning predetermined value of A: 01111111111111
+      store_b.d = 16b0111111111111111;                   //assigning predetermined value of B: 01111111111111
+      store_correct.d = 16b1111111111111110;             //pre-determined correct expected result: 11111111111110
+          
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                             
+      alumod.b = store_b.q;                           
+      alu = alumod.result;			                        
+        
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                 
+
+      
+          
+      if (case_state.q == 0){
+        seg.values = {8h2, 8h11, 8h11, 8h11};                          // io_seg: "2   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+          
+      if (case_state.q == 1){
+          seg.values = {8h11, 8h11, 8h11, 8hb};                         // io_seg: "   A"
+          store_status.d = 6b0;                                         // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+          
+      if (case_state.q == 2){
+          seg.values = {8h11, 8h11, 8h11, 8h8};                          // io_seg: "   B"
+          store_temp.d = store_b.q;                                     // show value of B in leds
+          }
+          
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};     // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                     // show the ALU RESULT
+          
+        if (store_correct.q == alu[15:0]){                             // Compare expected correct result & the alu result
+            seg.values = {8ha, 8hb, 8hc, 8hc};                         // "PASS"
+        } else {
+            seg.values = {8hd, 8hb, 8he, 8hf};                         // "FAIL"
+        }
+          }
+          
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTSUB; 
+          }
+      
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state 
+          
+          
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+            
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }            
+     //_____________________________________________________________________________________________________________________________________________
+        
+    //OPERATION 3 
+    //ADDER-SUBTRACTION
+    state.TESTSUB:	         
+      store_alufn.d = 6b000001;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000010;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b0000000000001010;             //pre-determined correct expected result: 10
+          
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                             
+      alumod.b = store_b.q;                           
+      alu = alumod.result;			                        
+        
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                 
+
+      
+          
+      if (case_state.q == 0){
+        seg.values = {8h3, 8h11, 8h11, 8h11};                          // io_seg: "3   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+          
+      if (case_state.q == 1){
+          seg.values = {8h11, 8h11, 8h11, 8hb};                        // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+          
+      if (case_state.q == 2){
+          seg.values = {8h11, 8h11, 8h11, 8h8};                        // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+          
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};    // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                    // show the ALU RESULT
+          
+        if (store_correct.q == alu[15:0]){                             // Compare expected correct result & the alu result
+            seg.values = {8ha, 8hb, 8hc, 8hc};                         // "PASS"
+        } else {
+            seg.values = {8hd, 8hb, 8he, 8hf};                         // "FAIL"
+        }
+          }
+          
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTMUL; 
+          }
+      
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state 
+          
+          
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+            
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }            
+     //_____________________________________________________________________________________________________________________________________________
+    
+    //OPERATION 4 
+    //ADDER-MULTIPLICATION
+    state.TESTMUL:	         
+      store_alufn.d = 6b000010;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000010;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b0000000000011000;             //pre-determined correct expected result: 24
+          
+      alumod.alufn = store_alufn.q;                      //Storing of the values
+      alumod.a = store_a.q;                             
+      alumod.b = store_b.q;                           
+      alu = alumod.result;			                        
+        
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                 
+
+      
+          
+      if (case_state.q == 0){
+        seg.values = {8h4, 8h11, 8h11, 8h11};                          // io_seg: "4   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+          
+      if (case_state.q == 1){
+          seg.values = {8h11, 8h11, 8h11, 8hb};                         // io_seg: "   A"
+          store_status.d = 6b0;                                         // clear io_led[23:16]
+          store_temp.d = store_a.q;                                     // show value of A in leds
+          }
+          
+      if (case_state.q == 2){
+          seg.values = {8h11, 8h11, 8h11, 8h8};                         // io_seg: "   B"
+          store_temp.d = store_b.q;                                     // show value of B in leds
+          }
+          
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};     // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                     // show the ALU RESULT
+          
+        if (store_correct.q == alu[15:0]){                             // Compare expected correct result & the alu result
+            seg.values = {8ha, 8hb, 8hc, 8hc};                         // "PASS"
+        } else {
+            seg.values = {8hd, 8hb, 8he, 8hf};                         // "FAIL"
+        }
+          }
+          
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTAND; 
+          }
+      
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state 
+          
+          
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+            
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }            
+     //_____________________________________________________________________________________________________________________________________________
+     
+    //OPERATION 5 
+    //BOOLE-AND
+    state.TESTAND:	         
+      store_alufn.d = 6b011000;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001110;                   //assigning predetermined value of A: 0000000000001110
+      store_b.d = 16b0000000000000010;                   //assigning predetermined value of B: 0000000000000010
+      store_correct.d = 16b0000000000000010;             //pre-determined correct expected result: 0000000000000010
+          
+      alumod.alufn = store_alufn.q;                      //Storing of the values
+      alumod.a = store_a.q;                             
+      alumod.b = store_b.q;                           
+      alu = alumod.result;			                        
+        
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                 
+
+      
+          
+      if (case_state.q == 0){
+        seg.values = {8h5, 8h11, 8h11, 8h11};                          // io_seg: "5   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+          
+      if (case_state.q == 1){
+          seg.values = {8h11, 8h11, 8h11, 8hb};                        // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+          
+      if (case_state.q == 2){
+          seg.values = {8h11, 8h11, 8h11, 8h8};                        // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+          
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+          
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha, 8hb, 8hc, 8hc};                        // "PASS"
+        } else {
+            seg.values = {8hd, 8hb, 8he, 8hf};                        // "FAIL"
+        }
+          }
+          
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTOR; 
+          }
+      
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state 
+          
+          
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+            
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }            
+     //_____________________________________________________________________________________________________________________________________________
+     
+        
+     // Case 6 - CASE OR (No true/false)
+    state.TESTOR:          
+      store_alufn.d = 6b011110;                          //assigning predetermined value of alufn
+      store_a.d = 16b0110100101010111;                   //assigning predetermined value of A: 12
+      store_b.d = 16b1010110000001000;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b1110110101011111;             //pre-determined correct expected result: 1
+                                     
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+      if (case_state.q == 0){
+        seg.values = {8h6,8h11,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTXOR;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }      
+ 
+    // --------------------------------------------------------------------------------------------
+    // Case 7 - CASE XOR (No true/false)
+    state.TESTXOR:          
+      store_alufn.d = 6b010110;                          //assigning predetermined value of alufn
+      store_a.d = 16b0110100101010111;                   //assigning predetermined value of A: 12
+      store_b.d = 16b1010110000001000;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b1100010101011111;             //pre-determined correct expected result: 1
+                                     
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+      if (case_state.q == 0){
+        seg.values = {8h7,8h11,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTA;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+   
+ 
+    // --------------------------------------------------------------------------------------------
+    // Case 8 - CASE "A" (No true/false)
+    state.TESTA:          
+      store_alufn.d = 6b011010;                          //assigning predetermined value of alufn
+      store_a.d = 16b00000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000010;                   //assigning predetermined value of B: 2
+      store_correct.d = 16b00000000000001100;             //pre-determined correct expected result: 1
+                                     
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+      if (case_state.q == 0){
+        seg.values = {8h8,8h11,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTSHL;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+   
+ 
+    // --------------------------------------------------------------------------------------------
+    // Case 9 - Positive SHL (Shift by 1)
+    state.TESTSHL:          
+      store_alufn.d = 6b100000;                          //assigning predetermined value of alufn
+      store_a.d = 16b1010011111111111;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000001;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0100111111111110;             //pre-determined correct expected result: 1
+                                     
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+      if (case_state.q == 0){
+        seg.values = {8h9,8h11,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTSHR;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+ 
+    //-------------------------------------------------------------------------------------------
+    // Case 10 - Positive SHR (Shift by 1)
+    state.TESTSHR:          
+      store_alufn.d = 6b100001;                          //assigning predetermined value of alufn
+      store_a.d = 16b1010011111111111;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000001;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0101001111111111;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h0,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTSRA;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+    // --------------------------------------------------------------------------------------------
+    // Case 11 - Positive SRA (Shift by 1)
+    state.TESTSRA:          
+      store_alufn.d = 6b100011;                          //assigning predetermined value of alufn
+      store_a.d = 16b1010011111111111;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000000001;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b1101001111111111;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h1,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTCMPEQ;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+ 
+   
+   
+   
+   
+    // -------------------------------------------------------------------------------------------
+    // Case 12 - Positive CMPEQ
+    state.TESTCMPEQ:          
+      store_alufn.d = 6b110011;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000001100;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0000000000000001;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h2,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTCMPLT;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+ 
+ 
+ 
+    // -------------------------------------------------------------------------------------------
+    // Case 13 - Positive CMPLT
+    state.TESTCMPLT:          
+      store_alufn.d = 6b110101;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000000010;                   //assigning predetermined value of A: 2
+      store_b.d = 16b0000000000001100;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0000000000000001;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h3,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTCMPLE;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+ 
+    // -------------------------------------------------------------------------------------------
+    // Case 14 - Positive CMPLE thats equal
+    state.TESTCMPLE:          
+      store_alufn.d = 6b110111;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000001100;                   //assigning predetermined value of A: 12
+      store_b.d = 16b0000000000001100;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0000000000000001;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h4,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.TESTCMPLE2;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+ 
+    // -------------------------------------------------------------------------------------------
+    // Case 15 - Positive CMPLE thats equal
+    state.TESTCMPLE2:          
+      store_alufn.d = 6b110111;                          //assigning predetermined value of alufn
+      store_a.d = 16b0000000000000010;                   //assigning predetermined value of A: 2
+      store_b.d = 16b0000000000001100;                   //assigning predetermined value of B: 12
+      store_correct.d = 16b0000000000000001;             //pre-determined correct expected result: 1
+         
+      alumod.alufn = store_alufn.q;                     //Storing of the values
+      alumod.a = store_a.q;                            
+      alumod.b = store_b.q;                          
+      alu = alumod.result;                                
+       
+      // Store Z, V, V values
+      store_z.d = alumod.z;
+      store_v.d = alumod.v;
+      store_n.d = alumod.n;                                
+ 
+     
+         
+        if (case_state.q == 0){
+        seg.values = {8h1,8h5,8h11,8h11};                                // io_seg: "1   "
+        store_status.d = c{2b0, store_alufn.q};                        // Store value of store_status
+        store_temp.d = 16b0;
+          }
+         
+      if (case_state.q == 1){
+          seg.values = {8h11,8h11,8h11,8hb};                              // io_seg: "   A"
+          store_status.d = 6b0;                                        // clear io_led[23:16]
+          store_temp.d = store_a.q;                                    // show value of A in leds
+          }
+         
+      if (case_state.q == 2){
+          seg.values = {8h11,8h11,8h11,8h8};                              // io_seg: "   B"
+          store_temp.d = store_b.q;                                    // show value of B in leds
+          }
+         
+      if (case_state.q == 3){
+          store_status.d = c{5b0, store_z.q, store_v.q, store_n.q};   // Show 00000ZVN on io_led[23:16]
+          store_temp.d = alu[15:0];                                   // show the ALU RESULT
+         
+        if (store_correct.q == alu[15:0]){                            // Compare expected correct result & the alu result
+            seg.values = {8ha,8hb,8hc,8hc};                           // "PASS"
+        } else {
+            seg.values = {8hd,8hb,8he,8hf};                           // "FAIL"
+        }
+          }
+         
+      if (case_state.q == 4){                                         // Transition to next operation case
+          store_a.d = 16b0;                                           // Clear all stored value
+          store_b.d = 16b0;
+          store_alufn.d = 6b0;
+          store_status.d = 8b0;
+          store_temp.d = 16b0;
+          store_z.d = b0;
+          store_v.d = b0;
+          store_n.d = b0;
+          case_state.d = 0;
+          state.d = state.MANUAL;
+          }
+     
+      // IO_LED DISPLAYS
+      io_led[23:16] = store_status.q;   // Show what is stored in store_status.q - can be ALUFN[5:0] or 000ZVN
+      io_led[15:0] = store_temp.q;      // Show what is stored in store_temp.q - can be either A[15:0] or B[15:0] depending on inner case_state
+         
+         
+      // If triggered back to MANUAL STATE      
+      if(io_dip[23]){                   //checking switch for manual state
+        state.d = state.MANUAL;}
+           
+      // In charge of counters & inner change of state      
+      counter.d = counter.q+1;                    //add 1 to clock every time code loops
+      if(io_button[3] | counter.q[TIMER]==1){
+        case_state.d = case_state.q+1;         //if clock timer reaches TIMER or if button input is detected
+        counter.d = 0;
+        }
+        
+  
+        
+        
+
+    default:
+      seg.values = {8hd, 8hd, 8hd, 8hd}; // io_seg: "FFFF"  SHOULD NOT REACH HERE, if it does means something is wrong. Probably due to connection of states
+
+
+        
+           
+    }      
+  }
+}
+

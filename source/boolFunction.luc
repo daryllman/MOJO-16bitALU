@@ -1,0 +1,45 @@
+module boolFunction (
+
+    input a[16],
+    input b[16],
+    input alufnbooler[4],
+    output res[16]
+  ) {
+
+  var i ;
+  var input_bits;
+
+
+  
+  always {
+    
+    for(i=0; i<16; i++){          
+      input_bits = c{a[i], b[i]};          
+      case(input_bits){
+        // this handles for case where both a and b = 0
+        b00:                      
+          res[i] = alufnbooler[0];
+        // this handles case for where a = 1 b = 0
+        b10:                      
+          res[i] = alufnbooler[1];
+        // this handles the case for where a = 0, b = 1
+        b01:                      
+          res[i] = alufnbooler[2];
+        // this handles the case for where a = 1, b = 1
+        b11:                      
+          res[i] = alufnbooler[3];
+        default:
+          res[i] = 0;
+      }
+    }
+      
+    
+    
+    
+    
+    
+    
+    }
+    
+  
+}

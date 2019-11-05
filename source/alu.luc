@@ -1,0 +1,79 @@
+module alu (
+
+    
+    // Inputs A, B and ALUFN that are of 16 bits, 16bits and 6 bits respectively
+    input a[16],
+    input b[16],
+    input alufn[6],
+    
+    
+    // Outputs expected are a 16bit result, Z, V, and N
+    output result[16],
+    output z,
+    output v,
+    output n
+   
+  ) {
+  
+  // instantiate the different functions of the alu we are building, multiply is our bonus
+  adderFunction adder;
+  boolFunction bool;
+  cmpFunction cmp;
+  shifterFunction shifter;
+  
+  
+  
+  always {
+   // similar to the JSIM format for lab3, we feed each module with the necessary arguments and achieve the result
+   
+   // for adder module, alufn[1:0] is required for either add/sub/mul selection:
+    adder.a = a;
+    adder.b = b;
+    adder.alufnadder = alufn[1:0];
+    
+   // instantiate for z,v,n
+    z = adder.z;
+    v = adder.v;
+    n = adder.n;
+    
+   // for cmp module, alufn[2:1] is required for cmpeq/cmplt/cmple selection. cmp accepts z v n as inputs
+    cmp.z = adder.z;
+    cmp.v = adder.v;
+    cmp.n = adder.n;
+    cmp.alufncmper = alufn[2:1];
+     
+   // for boolean module, alufn[3:0] is required for and/or/xor/"A" selection. inputs are a and b 
+    bool.a = a;
+    bool.b = b;
+    bool.alufnbooler = alufn[3:0];
+    
+   // for shifter module, alufn[1:0] is required for SHL/SHR/SRA selection. inputs are a and b
+    shifter.a = a;
+    shifter.b = b;
+    shifter.alufnshifter = alufn[1:0];
+        
+    case(alufn[5:4]){
+      // if alufn[5:4] == 00 (adder), we choose the output of the adder module
+      b00:
+        result = adder.res;
+      
+      // if alufn[5:4] == 01 (boolean), we choose the output of the boolean module 
+      b01:
+        result = bool.res;
+      
+      // if alufn[5:4] == 10 (shifter), we choose the output of the shifter module 
+      b10:
+        result = shifter.res;
+      
+      // if alufn[5:4] == 11 (cmp), we choose the output of the cmp module 
+      b11:  
+        result = cmp.res;
+        
+      default:
+        result = 16b0;
+    
+  }
+    
+    
+}
+}

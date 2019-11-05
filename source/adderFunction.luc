@@ -1,0 +1,50 @@
+module adderFunction (
+
+
+    input a[16],
+    input b[16],
+    input alufnadder[2],
+    
+    output res[16],
+    output z,
+    output v,
+    output n
+  ) {
+  
+  sig temp[16];
+  
+  always {
+    case(alufnadder){
+      // if addition is selected
+      b00: 
+        temp = a+b;
+        // Overflow check based on equation V = -A[15] * -B[15] * S[15] + A[15] * B[15] * -S[15] 
+        v = ((~a[15]) & (~b[15]) & temp[15]) | (a[15] & b[15] & (~temp[15]));
+      
+      // if subtraction is selected
+      b01:
+        temp = a-b;
+        // Overflow check based on equation V = -A[15] * B[15] * S[15] + A[15] * -B[15] * -S[15] for subtraction
+        v = ((~a[15]) & (b[15]) & temp[15]) | (a[15] & ~b[15] & (~temp[15])); 
+      
+      // if multiplication is selected
+      b10:
+        temp = a*b;
+        v = b0;
+        
+      // if invalid selected
+      default:
+        // return all 0
+        temp = 16b0;
+        v = b0; 
+    
+  }
+  // a nor gate for all of result bits, z = true if all bits of result is 0
+  res = temp;  
+  z = ~|temp;
+  // checks the MSB to see if result is negative. n= 1 means negative
+  n = temp[15];
+    
+  
+}
+}

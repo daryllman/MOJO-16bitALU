@@ -1,0 +1,42 @@
+module seven_seg (
+    input char[8],
+    output segs[7]
+  ) {
+
+  always {
+    case (char) {
+      0: segs = 7b0111111; // 0
+      1: segs = 7b0000110; // 1
+      2: segs = 7b1011011; // 2
+      3: segs = 7b1001111; // 3
+      4: segs = 7b1100110; // 4
+      5: segs = 7b1101101; // 5
+      6: segs = 7b1111101; // 6
+      7: segs = 7b0000111; // 7
+      8: segs = 7b1111111; // 8 or 'B'
+      9: segs = 7b1100111; // 9
+     10: segs = 7b1110011; // P    
+     11: segs = 7b1110111; // A
+     12: segs = 7b1101101; // S
+     13: segs = 7b1110001; // F
+     14: segs = 7b0000110; // I
+     15: segs = 7b0111000; // L
+     16: segs = 7b0000000; // blank 
+      default: segs = 7b0000000;
+    }
+  }
+}
+// SAMPLE TEMPLATE
+
+/*
+seg.values = {8h11,8h11,8h11,8h11} '____' 
+seg.values = {8hd, 8hb, 8he, 8hf}  'FAIL' 
+seg.values = {8ha, 8hb, 8hc, 8hc}  'PASS' 
+seg.values = {8h1, 8h11, 8h11, 8h11}  '1___'
+seg.values = {8h11, 8h11, 8h11, 8hb}  '__A'
+seg.values = {8h11, 8h11, 8h11, 8h8}  '__B'
+seg.values = {8h11, 8h0, 8h0, 8h0}  '_000'
+  
+
+*/
+

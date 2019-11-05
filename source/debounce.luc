@@ -1,0 +1,64 @@
+module debounce (
+    input clk,  // clock
+    input rst,  // reset
+    
+    input io_button[5],  // take in input from the 5 io buttons
+    
+    output out[2]
+  ) {
+  
+  .clk(clk), .rst(rst) {
+    dff debounce_clk[26](#INIT(20b0));     // slow clk counter
+    dff start (#INIT(0));  // store the start value
+    dff op_to_write[2] (#INIT(b00));  // store op
+  }
+  
+  //signals be to stored
+  sig up;
+  sig down;
+  sig center;
+  sig right;
+  
+  always {
+    // hook up signals
+    up = io_button[0];
+    center = io_button[1];
+    down = io_button[2];
+	right = io_button[4]; //guess
+    
+    out = b00;
+    if (!start.q) {
+      if (up){                // up = b01
+        start.d = 1;          // start counter
+        op_to_write.d = b01;  // output: 01
+        
+      } else if (down){       // down = b10
+        start.d = 1;          // start counter
+        op_to_write.d = b10;  // output: 10
+        
+      } else if (center){     // center - b11
+        start.d = 1;          // start counter
+        op_to_write.d = b11;  // output: 11
+        
+      } else if (right){     // right - b00
+        start.d = 1;          // start counter
+        op_to_write.d = b00;  // output: 11
+        
+      }
+    } else {
+      
+      // start slow clk
+      if (debounce_clk.q == 15000000){
+        out = op_to_write.q; // send output
+        op_to_write.d = b00; // reset output to write
+        start.d = 0;  // stop slow clk
+        debounce_clk.d = 20b0; // reset slow clk
+      } else {
+        debounce_clk.d = debounce_clk.q + 1;
+      }
+      
+    }
+    
+      
+  }
+}
