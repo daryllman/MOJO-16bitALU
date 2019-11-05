@@ -7,7 +7,7 @@ To install:
 ```
 git clone https://github.com/daryllman/MOJO-16bitALU.git
 ```
-1. Open lucid file on your MOJO IDE 
+1. Open lucid folder on your MOJO IDE by opening ALUproject.mojo
 2. Build project 
 3. Connect your MOJO and upload to flash memory
 
