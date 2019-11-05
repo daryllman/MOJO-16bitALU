@@ -13,7 +13,7 @@ git clone https://github.com/daryllman/MOJO-16bitALU.git
 
 ## How does our ALU work
 -  ALU module is built with separate function modules created (ADDER, BOOLE, CMP, and SHIFTER) which contains the logic for different arithmetic operations 
-- - ALU Inputs: A[15:0], B[15:0], ALUFN[5:0]
+ - ALU Inputs: A[15:0], B[15:0], ALUFN[5:0]
 - - ALU Output: result[15:0], Z t(true if all result[15:0] are 0), V(true if there is overflow), N(true if result is negative)
 - The function modules are selected based on specific ALUFN[5:0] being input into the ALU unit and output the result accordingly <br/>
 - The ALU has 3 modes: INITIAL (acts like a home page), AUTO MODE and MANUAL MODE
@@ -44,4 +44,4 @@ git clone https://github.com/daryllman/MOJO-16bitALU.git
 - Natasdasd - SUTD Sophomore | Information Systems Technology & Design (ISTD)
 
 ## Credits
-* [Lucid](https://alchitry.com/pages/lucid-fpga-tutorials) - Lucid 
+* [Lucid](https://alchitry.com/pages/lucid-fpga-tutorials) - Lucid tutorials 
